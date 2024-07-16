@@ -1,5 +1,5 @@
-﻿using ComponentPro.IO;
-using ComponentPro.Net;
+﻿using Rebex.IO;
+using Rebex.Net;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 namespace SFtpDownloader
 {
@@ -92,7 +93,7 @@ namespace SFtpDownloader
                             _logger.LogError($"In the password authenticate scheme, the password must be provided.");
                             return null;
                         }
-                        await sftp.AuthenticateAsync(opts.UserName, opts.Password);
+                        await sftp.LoginAsync(opts.UserName, opts.Password);
                         break;
                     case SFtpOptions.AuthenticateScheme.SecurityKey:
                         if (opts.PrivateKey == null ||
@@ -101,15 +102,16 @@ namespace SFtpDownloader
                             _logger.LogError($"In the security sey authenticate scheme, the Private Key must be provided.");
                             return null;
                         }
-                        var privateKey = new SecureShellPrivateKey(opts.PrivateKey);
-                        await sftp.AuthenticateAsync(opts.UserName, privateKey);
+                        var privateKey = new SshPrivateKey(opts.PrivateKey);
+                        await sftp.LoginAsync(opts.UserName, privateKey);
                         break;
                     default:
                         throw new InvalidOperationException($"Only these authenticate schemes[{nameof(SFtpOptions.AuthenticateScheme.Password)},{nameof(SFtpOptions.AuthenticateScheme.SecurityKey)}] supported.");
                 }
 
-                var filter = _namingStrategy.GetFileRegexName();
-                files = await sftp.ListNameAsync(opts.RemoteDirectory, new NameRegexSearchCondition(filter));
+                var filter = new Regex(_namingStrategy.GetFileRegexName());
+                files = await sftp.GetNameListAsync(opts.RemoteDirectory);
+                files.Where(name => filter.IsMatch(name));
                 if (files.Length <= 0)
                 {
                     _logger.LogWarning($"No reports files found from sftp server.");
@@ -138,7 +140,7 @@ namespace SFtpDownloader
                     {
                         var remoteDir = opts.RemoteDirectory.TrimStart('/').TrimEnd('/').Replace('\\', '/');
                         var remotePath = $"/{remoteDir}/{file}";
-                        await sftp.DownloadFileAsync(remotePath, stream);
+                        await sftp.GetFileAsync(remotePath, stream);
                     }
 
                     hasNewFile = true;
